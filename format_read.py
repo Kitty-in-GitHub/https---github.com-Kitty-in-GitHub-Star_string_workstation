@@ -2,21 +2,28 @@ import pandas as pd
 import random
 from datetime import datetime
 
+# 配置常量
+WORKER_LIST_FILE_NAME = '1号表干员信息表.csv'
+WORK_FLOW_FILE_NAME = '2号表工作流记录表.csv'
 work_type_list = ['线下工作', '设计工作', '行政工作', '采购工作', '策划工作', 
                  '内建内训', '外联工作', '玉衡特别行动组', '星弦游戏工作室']
+ROW_NAME_WORK_COUNT = '已经从事过的工作数量'
+ROW_NAME_WORKER_NUMBER = 'QQ号'
+ROW_NAME_WORKER_NAME = '干员昵称'
+WORK_ID = '工作流水号'
 
 def load_tables():
     try:
-        operator_df = pd.read_csv('1号表干员信息表.csv')
-        workflow_df = pd.read_csv('2号表工作流记录表.csv')
+        operator_df = pd.read_csv(WORKER_LIST_FILE_NAME)
+        workflow_df = pd.read_csv(WORK_FLOW_FILE_NAME)
         return operator_df, workflow_df
     except FileNotFoundError:
         print("错误：未找到数据文件，请确保1号表和2号表存在")
         exit()
 
 def save_tables(operator_df, workflow_df):
-    operator_df.to_csv('1号表干员信息表.csv', index=False)
-    workflow_df.to_csv('2号表工作流记录表.csv', index=False)
+    operator_df.to_csv(WORKER_LIST_FILE_NAME, index=False)
+    workflow_df.to_csv(WORK_FLOW_FILE_NAME, index=False)
 
 def assign_work(operator_df, workflow_df, work_type):
     preferred_operators = operator_df[operator_df[work_type_list[work_type-1]] == 1]
@@ -25,15 +32,15 @@ def assign_work(operator_df, workflow_df, work_type):
         print(f"没有干员倾向于从事工作类型{work_type_list[work_type-1]}")
         return None, None
     
-    min_work_count = preferred_operators['已经从事过的工作数量'].min()
-    candidates = preferred_operators[preferred_operators['已经从事过的工作数量'] == min_work_count]
+    min_work_count = preferred_operators[ROW_NAME_WORK_COUNT].min()
+    candidates = preferred_operators[preferred_operators[ROW_NAME_WORK_COUNT] == min_work_count]
     
     selected_operator = candidates.sample(1).iloc[0]
-    return selected_operator['QQ号'], selected_operator['干员昵称']
+    return selected_operator[ROW_NAME_WORKER_NUMBER], selected_operator[ROW_NAME_WORKER_NAME]
 
 def delete_work_record(operator_df, workflow_df):
     print("\n当前所有工作记录:")
-    print(workflow_df[['工作流水号', '干员昵称', '工作内容描述', '工作日期']])
+    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, '工作内容描述', '工作日期']])
     
     while True:
         record_id = input("\n请输入要删除的工作流水号(输入q返回主菜单): ")
@@ -45,47 +52,108 @@ def delete_work_record(operator_df, workflow_df):
             continue
             
         record_id = int(record_id)
-        if record_id not in workflow_df['工作流水号'].values:
+        if record_id not in workflow_df[WORK_ID].values:
             print(f"错误：流水号{record_id}不存在")
             continue
             
         break
     
-    # 获取要删除的记录
-    record = workflow_df[workflow_df['工作流水号'] == record_id].iloc[0]
-    
-    # 确认删除
+    record = workflow_df[workflow_df[WORK_ID] == record_id].iloc[0]
     print(f"\n将要删除以下记录:")
     print(record)
     confirm = input("确认删除吗？(y/n): ").lower()
     if confirm != 'y':
         return operator_df, workflow_df, False
     
-    # 更新干员信息表
-    qq = record['干员qq号']
-    operator_df.loc[operator_df['QQ号'] == qq, '已经从事过的工作数量'] -= 1
-    
-    # 删除工作记录
-    workflow_df = workflow_df[workflow_df['工作流水号'] != record_id]
+    qq = record[ROW_NAME_WORKER_NUMBER]
+    operator_df.loc[operator_df[ROW_NAME_WORKER_NUMBER] == qq, ROW_NAME_WORK_COUNT] -= 1
+    workflow_df = workflow_df[workflow_df[WORK_ID] != record_id]
     
     return operator_df, workflow_df, True
 
+def view_operator_df(operator_df):
+    for idx, row in operator_df.iterrows():
+        print(f"{idx}. QQ号: {row[ROW_NAME_WORKER_NUMBER]}, 昵称: {row[ROW_NAME_WORKER_NAME]}, 工作总数: {row[ROW_NAME_WORK_COUNT]}")
+
+def view_workflow_df(workflow_df):
+    print("\n当前所有工作记录:")
+    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, '工作内容描述', '工作日期']])
+
+def manual_import_work(operator_df, workflow_df):
+    print("\n当前所有干员列表:")
+    # 显示带索引的干员列表
+    for idx, row in operator_df.iterrows():
+        print(f"{idx}. QQ号: {row[ROW_NAME_WORKER_NUMBER]}, 昵称: {row[ROW_NAME_WORKER_NAME]}, 工作总数: {row[ROW_NAME_WORK_COUNT]}")
+    
+    while True:
+        worker_idx = input("\n请输入干员编号(输入q退出): ")
+        if worker_idx.lower() == 'q':
+            return operator_df, workflow_df, False
+        
+        try:
+            worker_idx = int(worker_idx)
+            if worker_idx < 0 or worker_idx >= len(operator_df):
+                print(f"错误：编号必须在0-{len(operator_df)-1}范围内")
+                continue
+        except ValueError:
+            print("错误：请输入有效的数字编号")
+            continue
+            
+        # 获取选中的干员信息
+        selected_worker = operator_df.iloc[worker_idx]
+        qq = selected_worker[ROW_NAME_WORKER_NUMBER]
+        nickname = selected_worker[ROW_NAME_WORKER_NAME]
+        
+        # 生成新的工作流水号
+        if not workflow_df.empty:
+            new_id = workflow_df[WORK_ID].max() + 1
+        else:
+            new_id = 1
+        
+        # 创建工作记录
+        description = input("请输入工作内容描述: ")
+        work_date = datetime.now().strftime('%Y-%m-%d') + ' (手动导入)'
+        
+        new_record = {
+            'QQ号': qq,
+            '干员昵称': nickname,
+            '工作流水号': new_id,
+            '工作内容描述': description,
+            '工作日期': work_date
+        }
+        
+        # 更新数据
+        workflow_df = workflow_df._append(new_record, ignore_index=True)
+        operator_df.loc[operator_df[ROW_NAME_WORKER_NUMBER] == qq, ROW_NAME_WORK_COUNT] += 1
+        
+        return operator_df, workflow_df, True
+
+
+
+CHOICE_NEW_WORK='1'
+CHOICE_DELETE_WORK_RECORD='2'
+CHOICE_MANUAL_IMPORT='3'
+CHOICE_VIEW_WORK_FLOW='4'
+CHOICE_VIEW_OPERATOR='5'
+CHOICE_QUIT='q'
 def main():
     operator_df, workflow_df = load_tables()
     
     while True:
         print("\n===== 工作分配系统 =====")
-        print("1. 分配新工作")
-        print("2. 删除工作记录")
-        print("q. 退出")
+        print(CHOICE_NEW_WORK+". 分配新工作")
+        print(CHOICE_DELETE_WORK_RECORD+". 删除工作记录")
+        print(CHOICE_MANUAL_IMPORT+". 手动导入工作记录")
+        print(CHOICE_VIEW_WORK_FLOW+". 预览工作记录")
+        print(CHOICE_VIEW_OPERATOR+". 预览干员信息表")
+        print(CHOICE_QUIT+". 退出")
         
         choice = input("请选择操作: ").lower()
         
-        if choice == 'q':
+        if choice == CHOICE_QUIT:
             break
-            
-        if choice == '1':
-            # 分配新工作逻辑
+        # 分配新工作
+        if choice == CHOICE_NEW_WORK:
             print("\n请输入当前工作类型:")
             for i, work_type in enumerate(work_type_list, 1):
                 print(f"{i}. {work_type}")
@@ -117,7 +185,7 @@ def main():
                 continue
                 
             if not workflow_df.empty:
-                new_id = workflow_df['工作流水号'].max() + 1
+                new_id = workflow_df[WORK_ID].max() + 1
             else:
                 new_id = 1
                 
@@ -125,27 +193,39 @@ def main():
             work_date = datetime.now().strftime('%Y-%m-%d')
             
             new_record = {
-                '干员qq号': qq,
+                'QQ号': qq,
                 '干员昵称': nickname,
                 '工作流水号': new_id,
                 '工作内容描述': description,
                 '工作日期': work_date
             }
             workflow_df = workflow_df._append(new_record, ignore_index=True)
-            operator_df.loc[operator_df['QQ号'] == qq, '已经从事过的工作数量'] += 1
-            
+            operator_df.loc[operator_df[ROW_NAME_WORKER_NUMBER] == qq, ROW_NAME_WORK_COUNT] += 1
+
             save_tables(operator_df, workflow_df)
             print("工作分配已记录！")
-            
-        elif choice == '2':
-            # 删除工作记录逻辑
+        # 删除工作记录
+        elif choice == CHOICE_DELETE_WORK_RECORD:
             operator_df, workflow_df, deleted = delete_work_record(operator_df, workflow_df)
             if deleted:
                 save_tables(operator_df, workflow_df)
                 print("工作记录已删除并更新干员信息！")
-                
+        # 手动导入工作记录
+        elif choice == CHOICE_MANUAL_IMPORT:
+            operator_df, workflow_df, manual_import = manual_import_work(operator_df, workflow_df)
+            if manual_import:
+                save_tables(operator_df, workflow_df)
+                print("成功手动导入工作记录")
+            else:
+                print("用户取消手动导入")
+        # 预览工作记录表
+        elif choice == CHOICE_VIEW_WORK_FLOW:
+            view_workflow_df(workflow_df)
+        # 预览干员信息表
+        elif choice == CHOICE_VIEW_OPERATOR:
+            view_operator_df(operator_df)
         else:
-            print("错误：无效的选择，请输入1、2或q")
+            print("错误：无效的选择，请输入1、2、3或q")
             
 if __name__ == "__main__":
     main()
