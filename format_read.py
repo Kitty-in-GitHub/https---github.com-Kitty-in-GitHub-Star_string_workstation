@@ -20,12 +20,15 @@ WORK_ID = '工作流水号'
 WORK_DESCRIBE = '工作描述'
 WORK_ASSIGN_TIME='工作日期'
 
-# 工作流记录表表头名称
-
 # 待完成工作表常量
 WTBDL_WORK_ID = '待完成工作序号'
 WTBDL_WORK_DESCRIBE = '工作描述'
 WTBDL_ASSIGN_TIME = '工作注册时间'
+
+# 表头名称
+WORK_TO_BE_DONE_LIST_COLUMN_NAME=[WTBDL_WORK_ID,WTBDL_WORK_DESCRIBE,WTBDL_ASSIGN_TIME]
+WORK_FLOW_COLUMN_NAME=[ROW_NAME_WORKER_NUMBER,ROW_NAME_WORKER_NAME,WORK_ID,WORK_DESCRIBE,WORK_ASSIGN_TIME]
+
 ############################
 #工具函数
 ##############################
@@ -91,8 +94,28 @@ def weather_tables_exsit():
     else:
         print(f"\n文件 '{file_path}' 不存在")
 
-# 检查表格是否符合格式要求
-def tables_format_check():
+# 根据表头名称检查表格是否符合格式要求，相符返回0，否则返回1
+def tables_column_name_check(table_to_be_check_file_path:str,column_name:str)->int:
+    # 检查表格是否存在
+    try:
+        table_to_be_check=pd.read_csv(table_to_be_check_file_path)
+    except FileNotFoundError:
+        print("错误：运行tables_column_name_check函数时未找到文件")
+        return 0
+    
+    headers = table_to_be_check.columns.tolist()
+    if(len(headers)!=len(column_name)):
+        print(f"\n位于{table_to_be_check_file_path}的表格表头的长度与程序设定的表头长度不一致，程序设定的表格长度为{len}")
+        print(f"\n表格头应该为{column_name}")
+    # 遍历表头名称列表，取出csv表格的表头逐个对比
+    for index, name in enumerate(column_name):
+        if(name!=headers[index]):
+            print(f"\n位于{table_to_be_check_file_path}的表格头内容与程序设定的不一致")
+            print(f"\n文件中的表格头为{name}")
+            print(f"\n程序期望的表格头为{headers[index]}")
+        return 0
+    return 1
+
 ##########################################
 #手动操作
 ##########################################
