@@ -1,31 +1,64 @@
 import pandas as pd
 import random
 from datetime import datetime
+import os
 
-# 配置常量
+# 三张表格的路径
 WORKER_LIST_FILE_NAME = '1号表干员信息表.csv'
 WORK_FLOW_FILE_NAME = '2号表工作流记录表.csv'
+PATH_WORK_TO_BE_DONE_LIST = '3号待完成工作表.csv'
+
+# 存放你们社团的工作分工
 work_type_list = ['线下工作', '设计工作', '行政工作', '采购工作', '策划工作', 
                  '内建内训', '外联工作', '玉衡特别行动组', '星弦游戏工作室']
+
+# 干员信息表和待完成工作表用到的常量
 ROW_NAME_WORK_COUNT = '已经从事过的工作数量'
 ROW_NAME_WORKER_NUMBER = 'QQ号'
 ROW_NAME_WORKER_NAME = '干员昵称'
 WORK_ID = '工作流水号'
+WORK_DESCRIBE = '工作描述'
+WORK_ASSIGN_TIME='工作日期'
 
+# 工作流记录表表头名称
+
+# 待完成工作表常量
+WTBDL_WORK_ID = '待完成工作序号'
+WTBDL_WORK_DESCRIBE = '工作描述'
+WTBDL_ASSIGN_TIME = '工作注册时间'
+############################
+#工具函数
+##############################
 def load_tables():
+    """从文件加载表格
+    Returns:
+        operator_df:干员名单
+        workflow_df:工作记录
+        path_work_to_be_done_list:待完成工作表
+    """
     try:
         operator_df = pd.read_csv(WORKER_LIST_FILE_NAME)
         workflow_df = pd.read_csv(WORK_FLOW_FILE_NAME)
-        return operator_df, workflow_df
+        work_to_be_done_list = pd.read_csv(PATH_WORK_TO_BE_DONE_LIST)
+        return operator_df, workflow_df ,work_to_be_done_list
     except FileNotFoundError:
         print("错误：未找到数据文件，请确保1号表和2号表存在")
         exit()
 
 def save_tables(operator_df, workflow_df):
+    """保存员工工作表和工作记录表
+    """
     operator_df.to_csv(WORKER_LIST_FILE_NAME, index=False)
     workflow_df.to_csv(WORK_FLOW_FILE_NAME, index=False)
 
-def assign_work(operator_df, workflow_df, work_type):
+def save_to_be_done_list(work_to_be_done_list):
+    """保存待完成工作标
+    """
+    work_to_be_done_list.to_csv(PATH_WORK_TO_BE_DONE_LIST, index=False)
+
+def assign_work(operator_df, work_type):
+    """自动随机分配工作，获取被抽中人的相关信息
+    """
     preferred_operators = operator_df[operator_df[work_type_list[work_type-1]] == 1]
     
     if preferred_operators.empty:
@@ -38,6 +71,32 @@ def assign_work(operator_df, workflow_df, work_type):
     selected_operator = candidates.sample(1).iloc[0]
     return selected_operator[ROW_NAME_WORKER_NUMBER], selected_operator[ROW_NAME_WORKER_NAME]
 
+# 检查表格是否存在
+def weather_tables_exsit():
+    file_path=WORKER_LIST_FILE_NAME
+    if os.path.exists(file_path):
+        print(f"\n文件 '{file_path}' 已经存在")
+    else:
+        print(f"\n文件 '{file_path}' 不存在")
+
+    file_path=WORK_FLOW_FILE_NAME
+    if os.path.exists(file_path):
+        print(f"\n文件 '{file_path}' 已经存在")
+    else:
+        print(f"\n文件 '{file_path}' 不存在")
+
+    file_path=PATH_WORK_TO_BE_DONE_LIST
+    if os.path.exists(file_path):
+        print(f"\n文件 '{file_path}' 已经存在")
+    else:
+        print(f"\n文件 '{file_path}' 不存在")
+
+# 检查表格是否符合格式要求
+def tables_format_check():
+##########################################
+#手动操作
+##########################################
+# 手动删除工作记录
 def delete_work_record(operator_df, workflow_df):
     print("\n当前所有工作记录:")
     print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, '工作内容描述', '工作日期']])
@@ -71,14 +130,7 @@ def delete_work_record(operator_df, workflow_df):
     
     return operator_df, workflow_df, True
 
-def view_operator_df(operator_df):
-    for idx, row in operator_df.iterrows():
-        print(f"{idx}. QQ号: {row[ROW_NAME_WORKER_NUMBER]}, 昵称: {row[ROW_NAME_WORKER_NAME]}, 工作总数: {row[ROW_NAME_WORK_COUNT]}")
-
-def view_workflow_df(workflow_df):
-    print("\n当前所有工作记录:")
-    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, '工作内容描述', '工作日期']])
-
+# 手动导入工作记录
 def manual_import_work(operator_df, workflow_df):
     print("\n当前所有干员列表:")
     # 显示带索引的干员列表
@@ -111,6 +163,7 @@ def manual_import_work(operator_df, workflow_df):
             new_id = 1
         
         # 创建工作记录
+        print(f"您选中的干员是：{nickname}")
         description = input("请输入工作内容描述: ")
         work_date = datetime.now().strftime('%Y-%m-%d') + ' (手动导入)'
         
@@ -128,7 +181,34 @@ def manual_import_work(operator_df, workflow_df):
         
         return operator_df, workflow_df, True
 
+# 手动向待完成工作表中填写一个新工作
+def add_a_new_work(work_to_be_done_list):
+    print("\n该功能尚未完善")
 
+# 表格初始化
+def csv_init():
+    csv1=
+    csv2=
+    csv3=
+
+########################################
+#表格预览功能
+######################################
+# 预览干员名单
+def view_operator_df(operator_df):
+    for idx, row in operator_df.iterrows():
+        print(f"{idx}. QQ号: {row[ROW_NAME_WORKER_NUMBER]}, 昵称: {row[ROW_NAME_WORKER_NAME]}, 工作总数: {row[ROW_NAME_WORK_COUNT]}")
+
+# 预览工作记录
+def view_workflow_df(workflow_df):
+    print("\n当前所有工作记录:")
+    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, WORK_DESCRIBE, WORK_ASSIGN_TIME]])
+
+# 预览待完成工作表
+def view_work_to_be_done_list(work_to_be_done_list):
+    print("\n当前待完成工作")
+    print(work_to_be_done_list[[WTBDL_WORK_ID, WTBDL_WORK_DESCRIBE, WTBDL_ASSIGN_TIME]])
+    return
 
 CHOICE_NEW_WORK='1'
 CHOICE_DELETE_WORK_RECORD='2'
@@ -136,8 +216,9 @@ CHOICE_MANUAL_IMPORT='3'
 CHOICE_VIEW_WORK_FLOW='4'
 CHOICE_VIEW_OPERATOR='5'
 CHOICE_QUIT='q'
+CHOICE_ADD_WORK_TO_BE_DONE='6'
 def main():
-    operator_df, workflow_df = load_tables()
+    operator_df, workflow_df , work_to_be_done_list= load_tables()
     
     while True:
         print("\n===== 工作分配系统 =====")
@@ -167,7 +248,7 @@ def main():
                 continue
                 
             work_type = int(work_type)
-            qq, nickname = assign_work(operator_df, workflow_df, work_type)
+            qq, nickname = assign_work(operator_df, work_type)
             
             if qq is None:
                 continue
@@ -224,8 +305,11 @@ def main():
         # 预览干员信息表
         elif choice == CHOICE_VIEW_OPERATOR:
             view_operator_df(operator_df)
+        # 向待完成工作表中增加一项工作
+        elif choice == CHOICE_ADD_WORK_TO_BE_DONE:
+            work_to_be_done_list=add_a_new_work()
         else:
-            print("错误：无效的选择，请输入1、2、3或q")
+            print("错误：无效的选择，请输入1、2、3、4、5、6或q")
             
 if __name__ == "__main__":
     main()
