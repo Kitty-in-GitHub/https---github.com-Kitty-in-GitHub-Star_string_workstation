@@ -26,31 +26,32 @@ WORK_ASSIGN_TIME='工作日期'
 WTBDL_WORK_ID = '待完成工作序号'
 WTBDL_WORK_DESCRIBE = '工作描述'
 WTBDL_ASSIGN_TIME = '工作注册时间'
+WTBDL_WORK_TYPE = '工作类型'
 
 # 表头名称
 WORKER_LIST_COLUMN_NAME=[WORKER_LIST_WORKER_NUMBER] + work_type_list + [WORKER_LIST_PHONE_NUMBER,ROW_NAME_WORKER_NAME,WORKER_LIST_WORK_COUNT]
 WORK_FLOW_COLUMN_NAME=[WORKER_LIST_WORKER_NUMBER,ROW_NAME_WORKER_NAME,WORK_ID,WORK_DESCRIBE,WORK_ASSIGN_TIME]
-WORK_TO_BE_DONE_LIST_COLUMN_NAME=[WTBDL_WORK_ID,WTBDL_WORK_DESCRIBE,WTBDL_ASSIGN_TIME]
+WORK_TO_BE_DONE_LIST_COLUMN_NAME=[WTBDL_WORK_ID,WTBDL_WORK_DESCRIBE,WTBDL_ASSIGN_TIME,WTBDL_WORK_TYPE]
 ############################
 #工具函数
 ##############################
 # 循环要求用户输入（y/n），输入Y、y返回True，输入N、n返回False，否则无法结束函数
-def ask_for_yes_or_no():
+def ask_for_yes_or_no(question='请输入y或n'):
     """
     Return:
         输入Y、y返回True，输入N、n返回False，否则无法结束函数
     """
     while True:
-        confirm=input()
+        confirm=input(question)
         if confirm in ['y','Y']:
             return True
         elif confirm in ['n','N']:
             return False
         else :
-            print("\n输入无效，请输入“y、Y、n、N”")
+            print(f"\n输入无效，{question}”")
 
 # 一次性加载三张表格
-def load_all_tables():
+def load_tables():
     """
     Returns:
         operator_df:干员名单
@@ -65,18 +66,6 @@ def load_all_tables():
     except FileNotFoundError:
         print("错误：未找到数据文件，请确保三张表存在")
         exit()
-
-# 从.csv文件加载表格
-def load_table(file_path:str):
-    """
-    Parameter:
-        file_path:文件路径
-    Return:
-        table_on_load:读取到的表格
-    """
-    table_on_load = pd.read_csv(file_path)
-    return table_on_load
-
 
 # 保存员工工作表和工作记录表
 def save_tables(operator_df, workflow_df):
@@ -213,6 +202,35 @@ def rebuild_csv(file_path: str, column_name: Union[List[str], tuple]) -> bool:
     except Exception as e:
         print(f"创建CSV文件失败: {str(e)}")
         return False
+
+# 索要工作类型
+def ask_for_work_type(work_types:List[str])->str:
+    """
+    Parameter:
+        work_types : 工作类型列表，需要是一个字符串列表
+    Return:
+        work_type_choosen : 选中工作类型的序号，如果选择强制退出，则返回q
+    """
+    while True:
+        # 打印工作类型
+        for i in range(len(work_types)):
+            print(f"{i}. {work_types[i]}")
+
+        # 获取序号
+        work_type_choosen = input("请输入工作类型的序号，或输入q返回")
+        
+        # 强制退出
+        if work_type_choosen == 'q':
+            break
+
+        # 校验工作序号
+        if not work_type_choosen.isdigit() or int(work_type_choosen) < 0 or int(work_type_choosen) > (len(work_types)-1):
+            print("输入错误：请输入工作类型的序号，或输入q返回")
+            continue
+        else:
+            break
+
+    return work_type_choosen
 ##########################################
 #手动操作
 ##########################################
@@ -303,7 +321,39 @@ def manual_import_work(operator_df, workflow_df):
 
 # 手动向待完成工作表中填写一个新工作
 def add_a_new_work(work_to_be_done_list):
-    print("\n该功能尚未完善")
+
+    # 获取工作类型
+    print("请选择工作类型")
+    work_type = ask_for_work_type(work_type_list)
+
+    # 如果工作类型标签为"q"则中断
+    if work_type == 'q':
+        return work_to_be_done_list
+
+    # 生成新的工作流水号
+    if not work_to_be_done_list.empty:
+        new_id = work_to_be_done_list[WTBDL_WORK_ID].max() + 1
+    else:
+        new_id = 1
+    
+    # 索要工作描述
+    work_descripution = input("请输入工作描述：")
+
+    # 获取工作注册时间
+    assign_time = datetime.now().strftime('%Y-%m-%d')
+
+    # 创建工作记录
+    new_record = {
+        WTBDL_WORK_ID : new_id,
+        WTBDL_WORK_DESCRIBE : work_descripution,
+        WTBDL_ASSIGN_TIME :assign_time,
+        WTBDL_WORK_TYPE : work_type
+    }
+
+    # 更新数据
+    work_to_be_done_list= work_to_be_done_list._append(new_record, ignore_index=True)
+    save_to_be_done_list(work_to_be_done_list)
+    return work_to_be_done_list
 
 # 表格初始化
 def csv_init():
@@ -312,6 +362,7 @@ def csv_init():
         - 存在且表头正确 - 检查下一张表
         - 有表格不存在或表头错误 - 询问是否创建缺失和错误的表格
     """
+    print("工具初始化中")
     # 储存需要重建的表格
     rebuild_table_name=[]
     # 检查干员信息表
@@ -339,7 +390,9 @@ def csv_init():
     if(len(rebuild_table_name)==0):
         print("\n所有的csv文件均存在，且表头正确")
     else:
-        print(f"\n需要创建或重新创建的文件为{rebuild_table_name}，请问是否进行重建(y/n)")
+        print(f"\n需要创建或重新创建的文件为{rebuild_table_name}，请问是否要进行自动重建")
+        print("若是，程序将创建并覆盖出错和缺失的文件；若否，程序将退出，您需要手动改正或创建文件")
+        print("请问是否进行自动重建(y/n)")
         if ask_for_yes_or_no():
             # 执行重建
             if('干员信息表' in rebuild_table_name):
@@ -350,11 +403,18 @@ def csv_init():
                 rebuild_csv(WORK_TO_BE_DONE_LIST_FILE_PATH,WORK_TO_BE_DONE_LIST_COLUMN_NAME)
             return
         else:
-            return
+            exit()
     return
 
+# 从待完成工作表中选择工作并指派人员完成
+def assign_work_from_to_be_done(operator_df,workflow_df,work_to_be_done_list):
+    # 显示待完成工作表
+    view_work_to_be_done_list(work_to_be_done_list)
 
-
+    # 获取要分配的工作序号
+    work_about_to_be_done_ID = input("请输入您要分配的工作ID")
+    # 
+    print("本功能尚在开发中")
 ########################################
 #表格预览功能
 ######################################
@@ -373,28 +433,29 @@ def view_work_to_be_done_list(work_to_be_done_list):
     print("\n当前待完成工作")
     print(work_to_be_done_list[[WTBDL_WORK_ID, WTBDL_WORK_DESCRIBE, WTBDL_ASSIGN_TIME]])
 
-CHOICE_CSV_INIT='0'
-CHOICE_NEW_WORK='1'
-CHOICE_DELETE_WORK_RECORD='2'
-CHOICE_MANUAL_IMPORT='3'
-CHOICE_VIEW_WORK_FLOW='4'
-CHOICE_VIEW_OPERATOR='5'
-CHOICE_ADD_WORK_TO_BE_DONE='6'
+CHOICE_CSV_INIT='0'# 重新初始化
+CHOICE_NEW_WORK='1'# 分配新工作
+CHOICE_DELETE_WORK_RECORD='2'# 删除工作记录
+CHOICE_MANUAL_IMPORT='3'# 手动导入工作记录
+CHOICE_VIEW_WORK_FLOW='4'# 预览工作记录表
+CHOICE_VIEW_OPERATOR='5'# 预览干员信息表
+CHOICE_ADD_WORK_TO_BE_DONE='6'# 注册待完成工作
+CHOICE_VIEW_WORK_TO_BE_DONE_LIST='7'# 预览待完成工作
+CHOICE_NEW_WORK_FROM_TO_BE_DONE_LIST='8'# 从待完成工作表中选择一项工作分配
 CHOICE_QUIT='q'
+CHOICE_LIST=['0. 重新初始化',"1. 分配新工作","2. 删除工作记录","3. 手动导入工作记录","4. 预览工作记录表",
+             "5. 预览干员信息表","6. 注册待完成工作","7. 预览待完成工作表","8. 从待完成工作表中选择一项工作分配","q. 退出"]
 
 def main():
-    operator_df, workflow_df , work_to_be_done_list= load_tables()   
+    # 程序初始化
+    csv_init()
+    operator_df, workflow_df , work_to_be_done_list = load_tables()
+
     while True:
         print("\n===== 工作分配系统 =====")
-        print(CHOICE_CSV_INIT+'. 初始化')
-        print(CHOICE_NEW_WORK+". 分配新工作")
-        print(CHOICE_DELETE_WORK_RECORD+". 删除工作记录")
-        print(CHOICE_MANUAL_IMPORT+". 手动导入工作记录")
-        print(CHOICE_VIEW_WORK_FLOW+". 预览工作记录")
-        print(CHOICE_VIEW_OPERATOR+". 预览干员信息表")
-        print(CHOICE_QUIT+". 退出")
+        for i in range(len(CHOICE_LIST)):
+            print(CHOICE_LIST[i])
 
-        
         choice = input("请选择操作: ").lower()
         
         if choice == CHOICE_QUIT:
@@ -476,7 +537,10 @@ def main():
             view_operator_df(operator_df)
         # 向待完成工作表中增加一项工作
         elif choice == CHOICE_ADD_WORK_TO_BE_DONE:
-            work_to_be_done_list=add_a_new_work()
+            work_to_be_done_list = add_a_new_work(work_to_be_done_list)
+        # 预览待完成工作表
+        elif choice == CHOICE_VIEW_WORK_TO_BE_DONE_LIST:
+            view_work_to_be_done_list(work_to_be_done_list)
         else:
             print("错误：无效的选择，请输入数字0~6或q")
             
