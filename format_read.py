@@ -362,7 +362,7 @@ def add_information_to_a_format(selected_df: pd.DataFrame, added_information: Li
 # 手动删除工作记录
 def delete_work_record(operator_df, workflow_df):
     print("\n当前所有工作记录:")
-    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, '工作内容描述', '工作日期']])
+    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, WORK_DESCRIBE, WORK_ASSIGN_TIME]])
     
     while True:
         record_id = input("\n请输入要删除的工作流水号(输入q返回主菜单): ")
@@ -394,7 +394,13 @@ def delete_work_record(operator_df, workflow_df):
     return operator_df, workflow_df, True
 
 # 手动导入工作记录
-def manual_import_work(operator_df, workflow_df):
+def manual_import_work(operator_df:pd.DataFrame, workflow_df:pd.DataFrame):
+    """
+    手动导入工作记录
+    
+    :param operator_df: 干员名单
+    :param workflow_df: 工作流记录表
+    """
     print("\n当前所有干员列表:")
     # 显示带索引的干员列表
     for idx, row in operator_df.iterrows():
@@ -403,7 +409,8 @@ def manual_import_work(operator_df, workflow_df):
     while True:
         worker_idx = input("\n请输入干员编号(输入q退出): ")
         if worker_idx.lower() == 'q':
-            return operator_df, workflow_df, False
+            print("用户手动取消")
+            return operator_df, workflow_df
         
         try:
             worker_idx = int(worker_idx)
@@ -434,15 +441,16 @@ def manual_import_work(operator_df, workflow_df):
             'QQ号': qq,
             '干员昵称': nickname,
             '工作流水号': new_id,
-            '工作内容描述': description,
+            '工作描述': description,
             '工作日期': work_date
         }
         
         # 更新数据
         workflow_df = workflow_df._append(new_record, ignore_index=True)
         operator_df.loc[operator_df[WORKER_LIST_WORKER_NUMBER] == qq, WORKER_LIST_WORK_COUNT] += 1
+        save_tables(operator_df,workflow_df)
         
-        return operator_df, workflow_df, True
+        return operator_df, workflow_df
 
 # 手动向待完成工作表中填写一个新工作
 def add_a_new_work(work_to_be_done_list):
@@ -481,7 +489,11 @@ def add_a_new_work(work_to_be_done_list):
     return work_to_be_done_list
 
 # 从待完成工作表中选择工作并指派人员完成
-def manual_assign_work_from_to_be_done(operator_df:pd.DataFrame,workflow_df:pd.DataFrame,work_to_be_done_list:pd.DataFrame):
+def manual_assign_work_from_to_be_done(
+        operator_df:pd.DataFrame,#干员信息表
+        workflow_df:pd.DataFrame,#工作记录表
+        work_to_be_done_list:pd.DataFrame#待完成工作表
+        )->Union[pd.DataFrame,pd.DataFrame,pd.DataFrame,bool]:
     """
     从待完成工作表中手动选择工作并指派人员完成
     
@@ -491,12 +503,11 @@ def manual_assign_work_from_to_be_done(operator_df:pd.DataFrame,workflow_df:pd.D
         work_to_be_done_list：待完成工作表
         
     Returns:
-        三张表
-        是否指派了新工作
+        operator_df：更新后的干员信息表
+        workflow_df：更新后的工作记录表
+        work_to_be_done_list：更新后的待完成工作表
+        Flag：标志位，标志是否用户中断了
     """
-    # 检查待完成工作表是否为空
-    # print("本函数尚未完工")
-
     # return operator_df, workflow_df, work_to_be_done_list, False
     if len(work_to_be_done_list)<1:
         print("待完成工作表为空，请您先向待完成工作表中填写工作再通过本选项进行分配")
@@ -576,7 +587,21 @@ def manual_assign_work_from_to_be_done(operator_df:pd.DataFrame,workflow_df:pd.D
         return operator_df,workflow_df,work_to_be_done_list,True
 
 # 从待完成工作表中自动选择工作并抽取人员完成
-def auto_assign_work_from_to_be_done(operator_df:pd.DataFrame,workflow_df:pd.DataFrame,work_to_be_done_list:pd.DataFrame):
+def auto_assign_work_from_to_be_done(
+        operator_df:pd.DataFrame,#干员信息表
+        workflow_df:pd.DataFrame,#工作记录表
+        work_to_be_done_list:pd.DataFrame#待完成工作表
+        ):
+    """
+    auto_assign_work_from_to_be_done 的 Docstring
+    
+    :param operator_df: 说明
+    :type operator_df: pd.DataFrame
+    :param workflow_df: 说明
+    :type workflow_df: pd.DataFrame
+    :param work_to_be_done_list: 说明
+    :type work_to_be_done_list: pd.DataFrame
+    """
     # 检查待完成工作表是否为空
     if len(work_to_be_done_list)<1:
         print("待完成工作表为空，请您先向待完成工作表中填写工作再通过本选项进行分配")
@@ -677,7 +702,7 @@ CHOICE_VIEW_WORK_TO_BE_DONE_LIST='7'# 预览待完成工作
 CHOICE_NEW_WORK_FROM_TO_BE_DONE_LIST='8'# 从待完成工作表中选择一项工作分配
 CHOICE_HELP = '9'
 CHOICE_QUIT='q'
-CHOICE_LIST=['0. 重新初始化',"1. 分配新工作","2. 删除工作记录","3. 从待完成工作表手动导入工作记录","4. 预览工作记录表",
+CHOICE_LIST=['0. 重新初始化',"1. 分配新工作","2. 删除工作记录","3. 手动导入工作记录","4. 预览工作记录表",
              "5. 预览干员信息表","6. 注册待完成工作","7. 预览待完成工作表","8. 从待完成工作表中选择一项工作分配","9. 使用帮助",
              "q. 退出"]
 
@@ -744,7 +769,7 @@ def main():
                 'QQ号': qq,
                 '干员昵称': nickname,
                 '工作流水号': new_id,
-                '工作内容描述': description,
+                '工作描述': description,
                 '工作日期': work_date
             }
             workflow_df = workflow_df._append(new_record, ignore_index=True)
@@ -761,7 +786,16 @@ def main():
                 print("工作记录已删除并更新干员信息！")
         # 手动导入工作记录
         elif choice == CHOICE_MANUAL_IMPORT:
-            operator_df,workflow_df,work_to_be_done_list,manual_import = manual_assign_work_from_to_be_done(operator_df,workflow_df,work_to_be_done_list)
+            print("\n手动导入工作记录")
+            manual_flag=ask_for_number(0,1,"0：从待完成工作表选择，\n1：手动输入工作描述\n2：取消")
+            if manual_flag==0:
+                print("从待完成工作表选择")
+                operator_df,workflow_df,work_to_be_done_list,_=manual_assign_work_from_to_be_done(operator_df,workflow_df,work_to_be_done_list)
+            elif manual_flag==1:
+                print("手动输入工作描述")
+                operator_df,workflow_df = manual_import_work(operator_df,workflow_df)
+            elif manual_flag==2:
+                print("用户取消")
         # 预览工作记录表
         elif choice == CHOICE_VIEW_WORK_FLOW:
             view_workflow_df(workflow_df)
