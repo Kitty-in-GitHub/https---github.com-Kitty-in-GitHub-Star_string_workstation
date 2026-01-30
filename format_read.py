@@ -3,6 +3,7 @@ import random
 from datetime import datetime
 import os
 from typing import List, Union, Tuple
+# import tkinter as tk
 
 # 分割线
 DEVIDE_LINE = '###########################'
@@ -13,17 +14,20 @@ WORK_FLOW_FILE_PATH= '2号表工作流记录表.csv'
 WORK_TO_BE_DONE_LIST_FILE_PATH = '3号待完成工作表.csv'
 
 # 存放你们社团的工作分工类型
-work_type_list = ['线下工作', '设计工作', '行政工作', '采购工作', '策划工作', 
-                 '内建内训', '外联工作', '玉衡特别行动组', '星弦游戏工作室']
+# work_type_list = ['线下工作', '设计工作', '行政工作', '采购工作', '策划工作', '内建内训', '外联工作', '玉衡特别行动组', '星弦游戏工作室']
+work_type_list = ['线下工作','设计工作','行政工作','策划工作','AI绘画']
 
 # 干员信息表和待完成工作表用到的常量
 WORKER_LIST_WORKER_NUMBER = 'QQ号'
 WORKER_LIST_PHONE_NUMBER='手机号'
 WORKER_LIST_WORK_COUNT = '已经从事过的工作数量'
+WORKER_LIST_NO_USE_FLAG = '干员弃用标签'# 可以使用这个标签将个别干员标记为弃用
 ROW_NAME_WORKER_NAME = '干员昵称'
 WORK_ID = '工作流水号'
 WORK_DESCRIBE = '工作描述'
 WORK_ASSIGN_TIME='工作日期'
+
+PERSONAL_INFORMATION_LIST=['姓名','学号','手机号','QQ号','干员昵称']
 
 # 待完成工作表常量
 WTBDL_WORK_ID = '待完成工作序号'
@@ -32,7 +36,7 @@ WTBDL_ASSIGN_TIME = '工作注册时间'
 WTBDL_WORK_TYPE = '工作类型'
 
 # 表头名称
-WORKER_LIST_COLUMN_NAME=[WORKER_LIST_WORKER_NUMBER] + work_type_list + [WORKER_LIST_PHONE_NUMBER,ROW_NAME_WORKER_NAME,WORKER_LIST_WORK_COUNT]
+WORKER_LIST_COLUMN_NAME=PERSONAL_INFORMATION_LIST + work_type_list + [WORKER_LIST_WORK_COUNT,WORKER_LIST_NO_USE_FLAG]
 WORK_FLOW_COLUMN_NAME=[WORKER_LIST_WORKER_NUMBER,ROW_NAME_WORKER_NAME,WORK_ID,WORK_DESCRIBE,WORK_ASSIGN_TIME]
 WORK_TO_BE_DONE_LIST_COLUMN_NAME=[WTBDL_WORK_ID,WTBDL_WORK_DESCRIBE,WTBDL_ASSIGN_TIME,WTBDL_WORK_TYPE]
 
@@ -56,14 +60,20 @@ def load_tables():
         print("错误：未找到数据文件，请确保三张表存在")
         exit()
 
-# 保存员工工作表和工作记录表
-def save_tables(operator_df, workflow_df):
-    """
-    """
+# 保存员工工作表
+def save_operator_df(operator_df):
     operator_df.to_csv(WORKER_LIST_FILE_PATH, index=False)
+
+# 保存工作记录表
+def save_workflow_df(workflow_df):
     workflow_df.to_csv(WORK_FLOW_FILE_PATH, index=False)
 
-# 保存待完成工作标
+# 保存员工工作表和工作记录表
+def save_tables(operator_df, workflow_df):
+    save_operator_df(operator_df)
+    save_workflow_df(workflow_df)
+
+# 保存待完成工作表
 def save_to_be_done_list(work_to_be_done_list):
     """
     """
@@ -272,21 +282,54 @@ def ask_for_yes_or_no(question='请输入y或n')->bool:
             print(f"\n输入无效，{question}”")
 
 # 自动随机分配工作，获取被抽中人的相关信息
-def assign_work(operator_df:pd.DataFrame, work_type:pd.DataFrame):
-    """
-    Returns:
-        selected_operator[WORKER_LIST_WORKER_NUMBER]:被分配到工作的人员工号（这里用的是qq号）
-        selected_operator[ROW_NAME_WORKER_NAME]:被分配到工作的人员姓名
-    """
-    preferred_operators = operator_df[operator_df[work_type_list[work_type-1]] == 1]
+# 1号干员信息表.csv的表头为“QQ号,线下工作,设计工作,行政工作,策划工作,AI绘画,手机号,干员昵称,已经从事过的工作数量,干员弃用标签”
+# 线下工作,设计工作,行政工作,策划工作,AI绘画是5项工作类型，填写的内容为“0~5”的整数，或空置
+# 当填写“0”或“”时，说明干员不愿意或不能从事这项工作；当填写“1~4”时，表示干员对此项工作的热衷倾向排序。其中1表示干员最倾向于此任务；5表示干员最不倾向于此种任务，但不得已时仍会承担这个任务。
+# 已经从事过的工作数量是一个整数，记录了干员已经从事过的任务数量
+# 干员弃用标签是0，1值；为1时表示干员被弃之，不能从事任何任务；为0时表示干员能够正常工作
+# 其他条目为记录干员基本信息
+def assign_work(operator_df: pd.DataFrame, work_type: int) -> Tuple[Union[str, None], Union[str, None]]:
+    '''
+    修改后的工作分配函数
+    分配原则：
+    1. 只从未被弃用的干员中抽签（干员弃用标签=0）
+    2. 干员必须能从事该工作（工作类型值在1-4之间）
+    3. 优先选择工作数量少的干员
+    4. 相同工作数量时选择工作倾向值更高的干员（数值越小优先级越高）
+    5. 若仍相同则随机选择
     
-    if preferred_operators.empty:
-        print(f"没有干员倾向于从事工作类型{work_type_list[work_type-1]}")
+    参数说明：
+    work_type: 工作类型索引（0-based）
+    '''
+    # 获取工作类型名称
+    work_type_col = work_type_list[work_type]
+    
+    # 筛选可用干员：未弃用 + 能从事该工作（值在1-4之间）
+    available_operators = operator_df[
+        (operator_df[WORKER_LIST_NO_USE_FLAG] == 0) & 
+        (operator_df[work_type_col] >= 1) & 
+        (operator_df[work_type_col] <= 4)
+    ]
+    
+    if available_operators.empty:
+        print(f"没有干员可以从事工作类型 '{work_type_col}'")
         return None, None
     
-    min_work_count = preferred_operators[WORKER_LIST_WORK_COUNT].min()
-    candidates = preferred_operators[preferred_operators[WORKER_LIST_WORK_COUNT] == min_work_count]
+    # 找到最小工作数量
+    min_work_count = available_operators[WORKER_LIST_WORK_COUNT].min()
     
+    # 筛选工作数量最少的干员
+    min_work_ops = available_operators[
+        available_operators[WORKER_LIST_WORK_COUNT] == min_work_count
+    ]
+    
+    # 找到最高工作倾向（最小数值）
+    min_preference = min_work_ops[work_type_col].min()
+    
+    # 筛选具有最高工作倾向的干员
+    candidates = min_work_ops[min_work_ops[work_type_col] == min_preference]
+    
+    # 随机选择最终干员
     selected_operator = candidates.sample(1).iloc[0]
     return selected_operator[WORKER_LIST_WORKER_NUMBER], selected_operator[ROW_NAME_WORKER_NAME]
 
@@ -362,7 +405,8 @@ def add_information_to_a_format(selected_df: pd.DataFrame, added_information: Li
 # 手动删除工作记录
 def delete_work_record(operator_df, workflow_df):
     print("\n当前所有工作记录:")
-    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, WORK_DESCRIBE, WORK_ASSIGN_TIME]])
+    view_workflow_df(workflow_df)
+#    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, WORK_DESCRIBE, WORK_ASSIGN_TIME]])
     
     while True:
         record_id = input("\n请输入要删除的工作流水号(输入q返回主菜单): ")
@@ -456,7 +500,7 @@ def manual_import_work(operator_df:pd.DataFrame, workflow_df:pd.DataFrame):
 def add_a_new_work(work_to_be_done_list):
 
     # 获取工作类型
-    print("请选择工作类型")
+    print("请选择工作类型（输入q退出）")
     work_type = ask_for_work_type(work_type_list)
 
     # 如果工作类型标签为"q"则中断
@@ -586,6 +630,80 @@ def manual_assign_work_from_to_be_done(
         
         return operator_df,workflow_df,work_to_be_done_list,True
 
+# 将一位干员标记为弃用或启用
+def operator_df_refresh(operator_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    手动闲置或启用一名干员，用于在有人撂挑子后更新干员名单
+    
+    :param operator_df: 干员信息表
+    :type operator_df: pd.DataFrame
+
+    Return
+    operator_df:更新后的干员信息表
+    """
+    print("\n更新干员弃用标签")
+    to_use_or_not_to_use_flag = ask_for_yes_or_no("输入y以启用干员，输入n以闲置干员: ")
+    
+    if to_use_or_not_to_use_flag:  # 启用干员
+        # 筛选已被弃用的干员
+        disabled_operators = operator_df[operator_df[WORKER_LIST_NO_USE_FLAG] == 1]
+        
+        if disabled_operators.empty:
+            print("错误：所有干员都已启用")
+            return operator_df
+            
+        print("\n已被弃用的干员列表：")
+        for idx, row in disabled_operators.iterrows():
+            print(f"{idx}. QQ号: {row[WORKER_LIST_WORKER_NUMBER]}, 昵称: {row[ROW_NAME_WORKER_NAME]}")
+        
+        target_status = 0
+        action = "启用"
+    else:  # 弃用干员
+        # 筛选未被弃用的干员
+        enabled_operators = operator_df[operator_df[WORKER_LIST_NO_USE_FLAG] == 0]
+        
+        if enabled_operators.empty:
+            print("错误：所有干员都已被弃用")
+            return operator_df
+            
+        print("\n当前可用的干员列表：")
+        for idx, row in enabled_operators.iterrows():
+            print(f"{idx}. QQ号: {row[WORKER_LIST_WORKER_NUMBER]}, 昵称: {row[ROW_NAME_WORKER_NAME]}")
+        
+        target_status = 1
+        action = "弃用"
+    
+    while True:
+        try:
+            idx_input = input(f"\n请输入要{action}的干员编号（输入q取消）: ").strip()
+            if idx_input.lower() == 'q':
+                print("操作取消")
+                return operator_df
+                
+            idx = int(idx_input)
+            if idx not in operator_df.index:
+                print(f"错误：编号 {idx} 不存在")
+                continue
+                
+            # 验证操作是否符合当前状态
+            current_status = operator_df.at[idx, WORKER_LIST_NO_USE_FLAG]
+            if (to_use_or_not_to_use_flag and current_status != 1) or \
+               (not to_use_or_not_to_use_flag and current_status != 0):
+                print(f"错误：该干员当前状态不符合{action}操作要求")
+                continue
+                
+            break
+        except ValueError:
+            print("错误：请输入有效的数字编号")
+    
+    # 更新弃用标签
+    operator_df.at[idx, WORKER_LIST_NO_USE_FLAG] = target_status
+    print(f"已{action}干员：{operator_df.at[idx, ROW_NAME_WORKER_NAME]}")
+    
+    # 保存更新
+    save_operator_df(operator_df)
+    return operator_df
+
 # 从待完成工作表中自动选择工作并抽取人员完成
 def auto_assign_work_from_to_be_done(
         operator_df:pd.DataFrame,#干员信息表
@@ -617,14 +735,16 @@ def auto_assign_work_from_to_be_done(
     # 获取待分配的工作的相关信息
     selected_work = work_to_be_done_list[work_to_be_done_list[WTBDL_WORK_ID] == work_about_to_be_done_ID].iloc[0]
     
-    work_type = int(selected_work['工作类型'])
+    # work_type = int(selected_work['工作类型'])
+    work_type = int(selected_work[WTBDL_WORK_TYPE])  # 获取工作类型索引
+    selceted_worker_qq, selected_worker_name = assign_work(operator_df, work_type)# 自动分配工作
     description = selected_work['工作描述']
 
     # 打印分割线
     print(DEVIDE_LINE)
 
     # 自动分配工作？
-    selceted_worker_qq,selected_worker_name=assign_work(operator_df,work_type)
+    # selceted_worker_qq,selected_worker_name=assign_work(operator_df,work_type)
 
     # 打印信息和确认
     print(f"建议分配干员：{selected_worker_name}")
@@ -681,13 +801,57 @@ def view_operator_df(operator_df):
 # 预览工作记录
 def view_workflow_df(workflow_df):
     print("\n当前所有工作记录:")
-    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, WORK_DESCRIBE, WORK_ASSIGN_TIME]].to_string(index=False))
+    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, WORK_DESCRIBE, WORK_ASSIGN_TIME]]
+          .to_string(index=False, justify='left', max_colwidth=30))
+#    print(workflow_df[[WORK_ID, ROW_NAME_WORKER_NAME, WORK_DESCRIBE, WORK_ASSIGN_TIME]].to_string(index=False))
 
 # 预览待完成工作表
 def view_work_to_be_done_list(work_to_be_done_list):
     print("\n当前待完成工作")
-    print(work_to_be_done_list[[WTBDL_WORK_ID, WTBDL_WORK_DESCRIBE, WTBDL_ASSIGN_TIME]].to_string(index=False))
+    display_df = work_to_be_done_list.copy()
+    display_df['工作类型名称'] = display_df[WTBDL_WORK_TYPE].apply(
+        lambda x: work_type_list[int(x)] if str(x).isdigit() and 0 <= int(x) < len(work_type_list) else "未知类型"
+    )
+    # 设置列宽自适应并左对齐
+    print(display_df[[
+        WTBDL_WORK_ID, 
+        WTBDL_WORK_DESCRIBE, 
+        WTBDL_ASSIGN_TIME, 
+        '工作类型名称'
+    ]].to_string(index=False, justify='left', max_colwidth=30))
+# 选择一张表格进行预览
+def view_choose_a_df(operator_df,workflow_df,work_to_be_done_list):
+    df_list=['1. 干员名单','2. 工作记录','3. 待完成工作','q 退出']
+    print("请选择你要预览的表格")
+    while True:
+        for list_name in df_list:
+            print(list_name)
+        order=input("请选择你要预览哪张表")
+        if order=='q' or order=='Q':
+            break
+        if order == '1':
+            view_operator_df(operator_df)
+        elif order == '2':
+            view_workflow_df(workflow_df)
+        elif order == '3':
+            view_work_to_be_done_list(work_to_be_done_list)
+        else:
+            print("请输入正确的选项")
 
+# 启用所有干员
+def enable_all_operators(operator_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    启用所有干员（将干员弃用标签设为0）
+    
+    :param operator_df: 干员信息表
+    :return: 更新后的干员信息表
+    """
+    operator_df[WORKER_LIST_NO_USE_FLAG] = 0
+    print("所有干员已被启用")
+    save_operator_df(operator_df)
+    return operator_df
+
+# 帮助指令
 def help_message():
     print("这里是帮助文档，抱歉我还没写完")
 
@@ -695,15 +859,20 @@ CHOICE_CSV_INIT='0'# 重新初始化
 CHOICE_NEW_WORK='1'# 分配新工作
 CHOICE_DELETE_WORK_RECORD='2'# 删除工作记录
 CHOICE_MANUAL_IMPORT='3'# 手动导入工作记录
-CHOICE_VIEW_WORK_FLOW='4'# 预览工作记录表
-CHOICE_VIEW_OPERATOR='5'# 预览干员信息表
-CHOICE_ADD_WORK_TO_BE_DONE='6'# 注册待完成工作
-CHOICE_VIEW_WORK_TO_BE_DONE_LIST='7'# 预览待完成工作
-CHOICE_NEW_WORK_FROM_TO_BE_DONE_LIST='8'# 从待完成工作表中选择一项工作分配
-CHOICE_HELP = '9'
+CHOICE_VIEW = '4'# 预览表格
+# CHOICE_VIEW_WORK_FLOW='4'# 预览工作记录表
+# CHOICE_VIEW_OPERATOR='5'# 预览干员信息表
+CHOICE_ADD_WORK_TO_BE_DONE='5'# 注册待完成工作
+# CHOICE_VIEW_WORK_TO_BE_DONE_LIST='7'# 预览待完成工作
+# CHOICE_NEW_WORK_FROM_TO_BE_DONE_LIST='7'# 从待完成工作表中选择一项工作分配
+CHOICE_ENABLE_ALL_OPERATOR='6'# 启用所有干员
+CHOICE_ABANDON_A_WORKER='7'# 弃用一名干员
+CHOICE_HELP = 'h'# 打开程序帮助
+
 CHOICE_QUIT='q'
-CHOICE_LIST=['0. 重新初始化',"1. 分配新工作","2. 删除工作记录","3. 手动导入工作记录","4. 预览工作记录表",
-             "5. 预览干员信息表","6. 注册待完成工作","7. 预览待完成工作表","8. 从待完成工作表中选择一项工作分配","9. 使用帮助",
+CHOICE_LIST=['0. 重新初始化',"1. 分配新工作","2. 删除工作记录","3. 手动导入工作记录","4. 预览表格",
+             "5. 注册待完成工作","6. 启用所有干员",'7. 更改一名干员的弃用标记',
+             "h. 使用帮助",
              "q. 退出"]
 
 def main():
@@ -796,23 +965,23 @@ def main():
                 operator_df,workflow_df = manual_import_work(operator_df,workflow_df)
             elif manual_flag==2:
                 print("用户取消")
-        # 预览工作记录表
-        elif choice == CHOICE_VIEW_WORK_FLOW:
-            view_workflow_df(workflow_df)
-        # 预览干员信息表
-        elif choice == CHOICE_VIEW_OPERATOR:
-            view_operator_df(operator_df)
-        # 向待完成工作表中增加一项工作
+        # 注册待完成工作
         elif choice == CHOICE_ADD_WORK_TO_BE_DONE:
-            work_to_be_done_list = add_a_new_work(work_to_be_done_list)
-        # 预览待完成工作表
-        elif choice == CHOICE_VIEW_WORK_TO_BE_DONE_LIST:
-            view_work_to_be_done_list(work_to_be_done_list)
+            work_to_be_done_list=add_a_new_work(work_to_be_done_list)
+        # 预览表格
+        elif choice == CHOICE_VIEW:
+            view_choose_a_df(operator_df,workflow_df,work_to_be_done_list)
+        # 启用所有干员
+        elif choice == CHOICE_ENABLE_ALL_OPERATOR:
+            operator_df=enable_all_operators(operator_df)
+        # 更改一名干员的弃用标记
+        elif choice == CHOICE_ABANDON_A_WORKER:
+            operator_df=operator_df_refresh(operator_df)
         # 使用帮助
         elif choice == CHOICE_HELP:
             help_message()
         else:
-            print("错误：无效的选择，请输入数字0~6或q")
-            
+            print("错误：无效的选择，请输入正确的选项")
+    print("用户退出，程序结束")     
 if __name__ == "__main__":
     main()
